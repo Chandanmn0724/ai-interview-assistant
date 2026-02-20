@@ -181,7 +181,10 @@
 </div>
 
 <script>
+const API_BASE = "https://ai-interview-assistant-qrfj.onrender.com";
+
 let currentQuestion = "";
+let chartInstance = null;
 
 async function generate() {
     document.getElementById("genSpinner").style.display = "block";
@@ -189,13 +192,17 @@ async function generate() {
     const role = document.getElementById("role").value;
     const difficulty = document.getElementById("difficulty").value;
 
-    const res = await fetch(`http://127.0.0.1:8000/interview/questions?role=${role}&difficulty=${difficulty}`);
-    const data = await res.json();
+    try {
+        const res = await fetch(`${API_BASE}/interview/questions?role=${role}&difficulty=${difficulty}`);
+        const data = await res.json();
+
+        currentQuestion = data.questions;
+        typeEffect("questions", data.questions);
+    } catch (error) {
+        document.getElementById("questions").innerText = "❌ Error generating questions.";
+    }
 
     document.getElementById("genSpinner").style.display = "none";
-
-    currentQuestion = data.questions;
-    typeEffect("questions", data.questions);
 }
 
 async function submitAnswer() {
@@ -205,29 +212,34 @@ async function submitAnswer() {
     const difficulty = document.getElementById("difficulty").value;
     const answer = document.getElementById("answer").value;
 
-    const res = await fetch("http://127.0.0.1:8000/interview/evaluate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            role,
-            difficulty,
-            question: currentQuestion,
-            answer
-        })
-    });
+    try {
+        const res = await fetch(`${API_BASE}/interview/evaluate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                role,
+                difficulty,
+                question: currentQuestion,
+                answer
+            })
+        });
 
-    const data = await res.json();
+        const data = await res.json();
+
+        typeEffect("feedback", data.feedback);
+        loadAnalytics();
+    } catch (error) {
+        document.getElementById("feedback").innerText = "❌ Error evaluating answer.";
+    }
 
     document.getElementById("evalSpinner").style.display = "none";
-
-    typeEffect("feedback", data.feedback);
-    loadAnalytics();
 }
 
 function typeEffect(id, text) {
     const el = document.getElementById(id);
     el.innerHTML = "";
     let i = 0;
+
     function typing() {
         if (i < text.length) {
             el.innerHTML += text.charAt(i);
@@ -235,33 +247,54 @@ function typeEffect(id, text) {
             setTimeout(typing, 8);
         }
     }
+
     typing();
 }
 
 async function loadAnalytics() {
-    const res = await fetch("http://127.0.0.1:8000/interview/analytics");
-    const data = await res.json();
+    try {
+        const res = await fetch(`${API_BASE}/interview/analytics`);
+        const data = await res.json();
 
-    document.getElementById("totalAttempts").innerText = data.total_attempts;
-    document.getElementById("avgScore").innerText = data.average_score;
+        document.getElementById("totalAttempts").innerText = data.total_attempts;
+        document.getElementById("avgScore").innerText = data.average_score;
 
-    const scores = data.history.map(h => h.score);
+        const scores = data.history.map(h => h.score);
+        const ctx = document.getElementById("scoreChart").getContext("2d");
 
-    const ctx = document.getElementById("scoreChart").getContext("2d");
-
-    new Chart(ctx, {
-        type: "line",
-        data: {
-            labels: scores.map((_, i) => "Attempt " + (i + 1)),
-            datasets: [{
-                label: "Score Progress",
-                data: scores,
-                borderColor: "#6366f1",
-                backgroundColor: "rgba(99,102,241,0.2)",
-                tension: 0.4
-            }]
+        // Destroy old chart before creating new one
+        if (chartInstance) {
+            chartInstance.destroy();
         }
-    });
+
+        chartInstance = new Chart(ctx, {
+            type: "line",
+            data: {
+                labels: scores.map((_, i) => "Attempt " + (i + 1)),
+                datasets: [{
+                    label: "Score Progress",
+                    data: scores,
+                    borderColor: "#6366f1",
+                    backgroundColor: "rgba(99,102,241,0.2)",
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: "#000"
+                        }
+                    }
+                }
+            }
+        });
+
+    } catch (error) {
+        console.log("Analytics error:", error);
+    }
 }
 
 loadAnalytics();
